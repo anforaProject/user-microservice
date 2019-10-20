@@ -21,6 +21,7 @@ hashids = "*"
 jsonschema = "*"
 bcrypt = "*"
 gunicorn = "*"
+fastapi = "*"
 
 [requires]
 python_version = "3.7"

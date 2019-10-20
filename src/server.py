@@ -1,5 +1,5 @@
 # starlette inports 
-from starlette.applications import Starlette
+from fastapi import FastAPI
 from starlette.responses import JSONResponse
 from starlette.schemas import SchemaGenerator
 import uvicorn
@@ -16,18 +16,16 @@ import tortoise.exceptions
 from errors import DoesNoExist, ValidationError, UserAlreadyExists
 from utils import validate_user_creation
 
-app = Starlette(debug=True)
+from forms import NewUser
+
+app = FastAPI(debug=True)
 
 register_tortoise(
     app, db_url="sqlite://memory.sql", modules={"models": ["db"]}, generate_schemas=True
 )
 
 
-schemas = SchemaGenerator(
-    {"openapi": "3.0.0", "info": {"title": "Example API", "version": "1.0"}}
-)
-
-@app.route('/v1/health', methods=["GET"])
+@app.get('/api/v1/health')
 async def homepage(request):
     return JSONResponse({'status': 'running'})
 
@@ -52,17 +50,16 @@ async def moch(request):
     print(prof)
     return JSONResponse(prof)
 
-@app.route('/v1/users/{username}', methods=["GET"])
-async def get_user_by_username(request):
-    username = request.path_params['username']
+@app.get('/api/v1/users/{username}')
+async def get_user_by_username(username):
     try:
         user = await UserProfile.get(user__username=username)
         return JSONResponse(await user.to_json())
     except tortoise.exceptions.DoesNotExist: 
         return DoesNoExist()
 
-@app.route('/v1/activitypub/{username}')
-async def get_ap_by_username(request):
+@app.get('/v1/activitypub/{username}')
+async def get_ap_by_username_ap(request):
     username = request.path_params['username']
     try:
         user = await UserProfile.get(user__username=username)
@@ -71,30 +68,32 @@ async def get_ap_by_username(request):
     except tortoise.exceptions.DoesNotExist: 
         return DoesNoExist()
 
-@app.route("/schema", methods=["GET"], include_in_schema=False)
-def openapi_schema(request):
-    return schemas.OpenAPIResponse(request=request)
 
-@app.route('/v1/users/create', methods=['POST'])
-async def create_new_user(request):
-    
-    body = await request.json()
-    
-    valid = validate_user_creation_request(body)
+@app.post('/api/v1/users/create')
+async def create_new_user(data:dict, response:JSONResponse):
 
-    if valid:
+    try:
+        data = NewUser(**data)
+    except:
+        ValidationError()
 
         # Check that an user with this userma doesn't exists already
 
-        user = await User.get(username=data['username'])
+    try:
+        user = await User.get(username=data.username)
         if user:
             return UserAlreadyExists()
-
-        await User.create(
-            username=body['username'],
-            password='shouldBeAHashedPassword',
-            email='random@example.com'
+    except tortoise.exceptions.DoesNotExist:
+        user = await User.create(
+            username=data.username,
+            password=data.password,
+            email=data.email
         )
-        
-    
-    return ValidationError()
+
+        prof = UserProfile(
+            user_id = user.id
+        )
+
+        await prof.save()
+
+        return JSONResponse(await prof.to_json())
